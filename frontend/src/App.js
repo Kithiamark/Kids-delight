@@ -1,21 +1,66 @@
-// Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
+// src/App.js
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { auth } from './firebase/config';
+import { onAuthStateChanged } from 'firebase/auth';
 
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-  apiKey: "AIzaSyDV5grX4jlhNZikxnjbjy6atVNTtVJayAA",
-  authDomain: "teens-and-kids-delight.firebaseapp.com",
-  projectId: "teens-and-kids-delight",
-  storageBucket: "teens-and-kids-delight.firebasestorage.app",
-  messagingSenderId: "289588893945",
-  appId: "1:289588893945:web:23f9c45ede391c5eedaa28",
-  measurementId: "G-WJXMQHWYY5"
-};
+import Login from './components/Login';
+import Dashboard from './components/Dashboard';
+import LessonView from './components/LessonView';
+import QuizView from './components/QuizView';
+import ProfileSetup from './components/ProfileSetup';
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
+function App() {
+  const [user, setUser] = useState(null);
+  const [profileComplete, setProfileComplete] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        setUser(user);
+        // Fetch profile from Flask backend
+        try {
+          const res = await fetch(`http://localhost:5000/api/users/${user.uid}`, {
+            headers: {
+              Authorization: `Bearer ${await user.getIdToken()}`,
+            },
+          });
+          const data = await res.json();
+          if (data.error || !data.ageGroup) {
+            setProfileComplete(false);
+          } else {
+            setProfileComplete(true);
+          }
+        } catch (err) {
+          console.error('Error fetching profile:', err);
+          setProfileComplete(false);
+        }
+      } else {
+        setUser(null);
+        setProfileComplete(false);
+      }
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  if (loading) return <div className="loading-screen">Loading...</div>;
+
+  return (
+    <Router>
+      <Routes>
+        <Route path="/login" element={!user ? <Login /> : <Navigate to="/" />} />
+        <Route path="/setup" element={user && !profileComplete ? <ProfileSetup user={user} /> : <Navigate to="/" />} />
+        <Route path="/" element={user && profileComplete ? <Dashboard user={user} /> : <Navigate to="/login" />} />
+        <Route path="/lessons/:lessonId" element={user && profileComplete ? <LessonView user={user} /> : <Navigate to="/login" />} />
+        <Route path="/quiz/:lessonId" element={user && profileComplete ? <QuizView user={user} /> : <Navigate to="/login" />} />
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
+    </Router>
+  );
+}
+
+export default App;
+
